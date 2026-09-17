@@ -19,4 +19,11 @@ app.use(express.static("public"));
 //browser se cookie lene ke liye
 app.use(cookieParser());
 
+
+//Routes
+
+import userRoute from "./routes/user.routes.js";
+
+app.use("/api/v1/users",userRoute);
+
 export{app};    
