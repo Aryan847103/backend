@@ -3,6 +3,7 @@ import { app } from "./app.js";
 
 import connectDB from "./db/index.js";
 
+// ye is liye taaki hum import syntax ko use kr sake require(dotenv).config) ki jagh
 dotenv.config({
     path:'./env'
 })

@@ -57,12 +57,12 @@ userSchema.pre("save", async function (next) {
     // yaha pe password ko string me hi pass krna hota hain
     if(!this.isModified("password")) return next();
 
-    this.password=bcrypt.hash(this.password,10)
+    this.password= await bcrypt.hash(this.password,10)
     next()
 })
 
 // these are custom methods which we are creating for checking weather the password is correct or not
-
+//return true/false
 userSchema.methods.isPasswordCorrect = async function (password) {
     return await bcrypt.compare(password, this.password);
 };

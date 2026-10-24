@@ -1,4 +1,6 @@
 import mongoose from "mongoose";
+
+//Mongoose Aggregation Pipeline is used to process and analyze MongoDB data through stages like filtering, grouping, sorting, counting, and joining.
 import mongooseAggregatePaginate from "mongoose-aggregate-paginate-v2";
 
 
