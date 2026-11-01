@@ -53,12 +53,12 @@ const userSchema=new mongoose.Schema({
 
 // kind of plugins hain, save ki jagh aur bhi fxns hote hain
 //Documentation me padh sakte hain middlwares ke
-userSchema.pre("save", async function (next) {
+userSchema.pre("save", async function () {
     // yaha pe password ko string me hi pass krna hota hain
-    if(!this.isModified("password")) return next();
+    if(!this.isModified("password")) return;
 
     this.password= await bcrypt.hash(this.password,10)
-    next()
+    
 })
 
 // these are custom methods which we are creating for checking weather the password is correct or not

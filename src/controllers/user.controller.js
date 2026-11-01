@@ -1,11 +1,29 @@
 import { asyncHandler } from "../utils/asyncHandler.js";
-import { apiErrors } from "../utils/apiErrors.js"
+import { ApiError } from "../utils/apiErrors.js"
 import {User} from "../models/user.model.js"
 import {uploadOnCloudinary} from "../utils/cloudinary.js";
 import { ApiResponse } from "../utils/apiResponse.js";
 
-const registerUser = asyncHandler(async (req, res) => {
+const generateAccessAndRefreshTokens=async(userId) =>{
+    try {
+        const user=await User.findById(userId);
+        const accessToken= await user.generateAccessToken();
+        const refreshToken=await user.generateRefreshToken();
 
+        user.refreshToken=refreshToken;
+
+        //user.save() alone use hota hai to sare parameters hone chhiye,lekin agar ek field ko hi kr rhe to argument pass krte hain
+        await user.save({validateBeforeSave:false});
+
+        return {accessToken,refreshToken};
+    } catch (error) {
+    console.log("ACTUAL ERROR:", error);
+    throw new ApiError(500, "Something went wrong while generating Access and Refresh Token");
+}
+}
+
+
+const registerUser = asyncHandler(async (req, res) => {
     //get user details
     //detail validation
     //check if already exist:username,email
@@ -17,40 +35,44 @@ const registerUser = asyncHandler(async (req, res) => {
     //return response
 
     //form or json
-    const {fullName,email,username,password}=req.body
+    const {fullName,email,userName,password}=req.body
     console.log("email:",email);
 
 
     if (
         !fullName?.trim() ||
         !email?.trim() ||
-        !username?.trim() ||
+        !userName?.trim() ||
         !password?.trim()
         ) {
-            throw new apiErrors(400, "All fields are required");
+            throw new ApiError(400, "All fields are required");
         }
 
-    const existedUser = User.findOne({
-        $or: [{ username }, { email }]
+    const existedUser = await User.findOne({
+        $or: [{ userName }, { email }]
         });
 
     if (existedUser) {
-        throw new apiErrors(409, "User with email or username already exists");
+        throw new ApiError(409, "User with email or username already exists");
     }
+
+
     //req.files is provided by multer not express
 
-    const avatarLocalPath=req.files?.avatar[0]?.path;
-    const coverImageLocalPath=req.files?.coverImage[0]?.path;
+    const avatarLocalPath=req.files?.avatar?.[0]?.path;
+    const coverImageLocalPath=req.files?.coverImage?.[0]?.path;
 
     if(!avatarLocalPath){
-        throw new apiErrors(400,"Avatar file is required");
+        throw new ApiError(400,"Avatar file is required");
     }
 
     const avatar=await uploadOnCloudinary(avatarLocalPath);
-    const coverImage=await uploadOnCloudinary(coverImageLocalPath);
+    const coverImage = coverImageLocalPath
+    ? await uploadOnCloudinary(coverImageLocalPath)
+    : null;
 
     if(!avatar){
-        throw new apiErrors(400,"Avatar file is required"); 
+        throw new ApiError(400,"Avatar file is required"); 
     }
 
     const user=await User.create({
@@ -59,22 +81,102 @@ const registerUser = asyncHandler(async (req, res) => {
         coverImage:coverImage?.url || "",
         email,
         password,
-        username:username.toLowerCase()
+        userName:userName.toLowerCase()
     })
 
-    const createdUser=User.findById(user._id).select(
+    const createdUser=await User.findById(user._id).select(
         "-password -refreshToken"
     )
 
     if(!createdUser){
-        throw new apiErrors(500,"Something went wrong while registering user");
+        throw new ApiError(500,"Something went wrong while registering user");
     }
 
     //hum bina Apiresponse ko use kiye bhi created user ko bhej sakte the
     //just code acha lage isiliye Apiresponse use hua hai
     return res.status(201).json(
-        new ApiResponse(200,createdUser,"User registered Succesfully")
+        new ApiResponse(201,createdUser,"User registered Succesfully")
     )
 });
 
-export {registerUser};
+const loginUser = asyncHandler(async (req,res) =>{
+    //req->body se data le aao
+    //username or email
+    //find the user
+    //password check
+    //access and refresh token
+    //send in cookies
+    
+    const {email,userName,password}=req.body;
+
+    if(!(userName || email)){
+        throw new ApiError(400,"username or email is required")
+    }
+
+    const user=await User.findOne({
+        $or:[{userName},{email}]
+    })
+
+    if(!user){
+        throw new ApiError(404,"User does not exist");
+    }
+
+    //findOne and all jitne bhi methods hai wo User(mongoose) deta hai
+    //jo humne method banaya hai jaise isPasswordCorrect,generateAccesTokes ye sab user se milta hai
+
+    const isPasswordValid = await user.isPasswordCorrect(password);
+    if(!isPasswordValid){
+        throw new ApiError(401,"Password Incorrect");
+    }
+
+    const {accessToken,refreshToken}=await generateAccessAndRefreshTokens(user._id);
+
+    //update kr rhe hai taaki user me refresh token bhi aa jaye,jo ki pehle empty tha
+    const loggedInUser = await User.findById(user._id).select("-password -refreshToken")
+
+    //using this cookies will be modifiable by server only,not form client,we can only see  
+    const options ={
+        httpOnly:true,
+        secure:true
+    }
+
+    return res
+    .status(200)
+    .cookie("accessToken",accessToken,options)
+    .cookie("refreshToken",refreshToken,options)
+    .json(
+        new ApiResponse(200,{
+            user:loggedInUser,accessToken,refreshToken
+        },"user logged in successfully")
+    )
+})
+
+const logoutUser = asyncHandler(async (req, res) => {
+    await User.findByIdAndUpdate(
+        req.user._id,
+        {
+            $set: {
+                refreshToken: undefined
+            }
+        },
+        {
+            new: true
+        }
+    );
+
+        const options ={
+        httpOnly:true,
+        secure:true
+    }
+
+    return res
+    .status(200)
+    .clearCookie("accessToken",options)
+    .clearCookie("refreshToken",options)
+    .json(new ApiResponse(200,{},"User logged Out"))
+});
+export {
+    registerUser,
+    loginUser,
+    logoutUser
+};
